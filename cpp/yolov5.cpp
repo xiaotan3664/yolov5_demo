@@ -8,7 +8,7 @@ YOLOV5 input && output
  */
 
 #define USE_ASPECT_RATIO 1
-#define DUMP_FILE 1
+//#define DUMP_FILE 1
 
 YoloV5::YoloV5(std::shared_ptr<BMNNContext> context):m_bmContext(context) {
     std::cout << "YoloV5 ctor .." << std::endl;
@@ -111,24 +111,28 @@ int YoloV5::pre_precess(const std::vector<cv::Mat>& images)
         bm_image image_aligned;
         // src_img
         cv::bmcv::toBMI((cv::Mat&)images[i], &image1);
+        bool need_copy = image1.width & (64-1);
 
-        int stride1[3], stride2[3];
-        bm_image_get_stride(image1, stride1);
-        stride2[0] = FFALIGN(stride1[0], 64);
-        stride2[1] = FFALIGN(stride1[1], 64);
-        stride2[2] = FFALIGN(stride1[2], 64);
+       if(need_copy){
+            int stride1[3], stride2[3];
+            bm_image_get_stride(image1, stride1);
+            stride2[0] = FFALIGN(stride1[0], 64);
+            stride2[1] = FFALIGN(stride1[1], 64);
+            stride2[2] = FFALIGN(stride1[2], 64);
+            bm_image_create(m_bmContext->handle(), image1.height, image1.width,
+                            image1.image_format, image1.data_type, &image_aligned, stride2);
 
-        bm_image_create(m_bmContext->handle(), image1.height, image1.width,
-                        image1.image_format, image1.data_type, &image_aligned, stride2);
+            bm_image_alloc_dev_mem(image_aligned, BMCV_IMAGE_FOR_IN);
+            bmcv_copy_to_atrr_t copyToAttr;
+            memset(&copyToAttr, 0, sizeof(copyToAttr));
+            copyToAttr.start_x = 0;
+            copyToAttr.start_y = 0;
+            copyToAttr.if_padding = 1;
 
-        bm_image_alloc_dev_mem(image_aligned, BMCV_IMAGE_FOR_IN);
-        bmcv_copy_to_atrr_t copyToAttr;
-        memset(&copyToAttr, 0, sizeof(copyToAttr));
-        copyToAttr.start_x = 0;
-        copyToAttr.start_y = 0;
-        copyToAttr.if_padding = 1;
-
-        bmcv_image_copy_to(m_bmContext->handle(), copyToAttr, image1, image_aligned);
+            bmcv_image_copy_to(m_bmContext->handle(), copyToAttr, image1, image_aligned);
+        } else {
+            image_aligned = image1;
+        }
 
 #if USE_ASPECT_RATIO
         bool isAlignWidth = false;
@@ -165,7 +169,7 @@ int YoloV5::pre_precess(const std::vector<cv::Mat>& images)
 #endif
 
         bm_image_destroy(image1);
-        bm_image_destroy(image_aligned);
+        if(need_copy) bm_image_destroy(image_aligned);
     }
 
     //2. converto
