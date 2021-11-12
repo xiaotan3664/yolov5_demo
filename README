@@ -14,6 +14,13 @@ $ script/gen_fix8b_bmodel.sh dataset_dir [iteration] [img_size] [batch_size] # b
 
 
 ==========================
+supported yolov5 io info
+input: [1, 3, image_size, image_size]
+output: [1, box_num, 5+class_num]
+
+also support yolox model
+
+==========================
 cpp demo usage:
 
 1. for pcie platform
@@ -23,15 +30,17 @@ compile demo program in docker
 then put yolov5_demo.pcie and yolov5_demo/data dir on pcie host with bm1684
   $ ./yolov5_demo.pcie
   $ ./yolov5_demo.pcie --input=path/to/image
+  $ ./yolov5_demo.pcie --input=path/to/image --bmodel=xxx.bmodel # use your own yolov5 bmodel
   $ ./yolov5_demo.pcie --help # see detail help info
 
 2. for SE5/arm
 compile demo program in docker
 	$ cd yolov5_demo/cpp
-	$ make -f Makefile.arm top_dir=/workspace #will generate yolov5_demo.arm
+	$ make -f Makefile.arm top_dir=/workspace #will generate yolov5_demo.arm # use your own yolov5 bmodel
 then put yolov5_demo.arm and yolov5_demo/data dir on SE5
   $ ./yolov5_demo.arm
   $ ./yolov5_demo.arm --input=path/to/image
+  $ ./yolov5_demo.arm --input=path/to/image --bmodel=xxx.bmodel
   $ ./yolov5_demo.arm --help # see detail help info
 
 ==========================
