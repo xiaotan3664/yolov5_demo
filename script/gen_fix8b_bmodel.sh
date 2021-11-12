@@ -55,7 +55,7 @@ convert_imageset --shuffle --resize_height=$img_size --resize_width=$img_size $d
 
 #
 # calibration fp32 umodel
-calibration_use_pb release -model $in_name/bm_network_bmnetp_test_fp32.prototxt -weights $in_name/bm_network_bmnetp.fp32umodel -iterations=$iteration -bitwidth=TO_INT8
+calibration_use_pb release -model $in_name/bm_network_bmnetp_test_fp32.prototxt -weights $in_name/bm_network_bmnetp.fp32umodel -iterations=$iteration -bitwidth=TO_INT8 2>&1 | tee cali_$in_name.log
 
 #
 # generate fix8b bmodel

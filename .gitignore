@@ -2,3 +2,7 @@ build
 *.log
 *.dot
 *.txt
+cpp/*.jpeg
+cpp/*.jpg
+python/*.jpeg
+python/*.jpg
