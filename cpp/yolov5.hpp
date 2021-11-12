@@ -31,11 +31,6 @@ class YoloV5 {
 
     std::vector<std::string> m_class_names;
     int m_class_num = 80; // default is coco names
-    //const float m_anchors[3][6] = {{10.0, 13.0, 16.0, 30.0, 33.0, 23.0}, {30.0, 61.0, 62.0, 45.0, 59.0, 119.0},{116.0, 90.0, 156.0, 198.0, 373.0, 326.0}};
-    std::vector<std::vector<std::vector<int>>> m_anchors{{{10, 13}, {16, 30}, {33, 23}},
-        {{30, 61}, {62, 45}, {59, 119}},
-        {{116, 90}, {156, 198}, {373, 326}}};
-    const int m_anchor_num = 3;
     int m_net_h, m_net_w;
 
     TimeStamp *m_ts;

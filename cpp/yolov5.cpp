@@ -42,6 +42,10 @@ int YoloV5::Init(const std::string& coco_name_file)
     m_net_h = tensor->get_shape()->dims[2];
     m_net_w = tensor->get_shape()->dims[3];
 
+    assert(m_bmNetwork->outputTensorNum()==1);
+    auto out_tensor = m_bmNetwork->outputTensor(0);
+    m_class_num = out_tensor->get_shape()->dims[2] - 5;
+
     // some API only accept bm_image whose stride is aligned to 64
     int aligned_net_w = FFALIGN(m_net_w, 64);
     int strides[3] = {aligned_net_w, aligned_net_w, aligned_net_w};
