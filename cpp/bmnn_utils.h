@@ -105,97 +105,141 @@ public:
 };
 
 class BMNNNetwork : public NoCopyable {
-    const bm_net_info_t *m_netinfo;
-    bm_tensor_t* m_inputTensors;
-    bm_tensor_t* m_outputTensors;
-    bm_handle_t  m_handle;
-    void *m_bmrt;
+	const bm_net_info_t *m_netinfo;
+	bm_tensor_t* m_inputTensors;
+	bm_tensor_t* m_outputTensors;
+	bm_handle_t  m_handle;
+	void *m_bmrt;
 
-    std::unordered_map<std::string, bm_tensor_t*> m_mapInputs;
-    std::unordered_map<std::string, bm_tensor_t*> m_mapOutputs;
+	std::unordered_map<std::string, bm_tensor_t*> m_mapInputs;
+	std::unordered_map<std::string, bm_tensor_t*> m_mapOutputs;
 
-public:
-    BMNNNetwork(void *bmrt, const std::string& name):m_bmrt(bmrt) {
-        m_handle = static_cast<bm_handle_t>(bmrt_get_bm_handle(bmrt));
-        m_netinfo = bmrt_get_network_info(bmrt, name.c_str());
-        m_inputTensors = new bm_tensor_t[m_netinfo->input_num];
-        m_outputTensors = new bm_tensor_t[m_netinfo->output_num];
-        for(int i = 0; i < m_netinfo->input_num; ++i) {
-            m_inputTensors[i].dtype = m_netinfo->input_dtypes[i];
-            m_inputTensors[i].shape = m_netinfo->stages[0].input_shapes[i];
-            m_inputTensors[i].st_mode = BM_STORE_1N;
-            m_inputTensors[i].device_mem = bm_mem_null();
-        }
+	public:
+	BMNNNetwork(void *bmrt, const std::string& name):m_bmrt(bmrt) {
+		m_handle = static_cast<bm_handle_t>(bmrt_get_bm_handle(bmrt));
+		m_netinfo = bmrt_get_network_info(bmrt, name.c_str());
+		m_inputTensors = new bm_tensor_t[m_netinfo->input_num];
+		m_outputTensors = new bm_tensor_t[m_netinfo->output_num];
+		for(int i = 0; i < m_netinfo->input_num; ++i) {
+			m_inputTensors[i].dtype = m_netinfo->input_dtypes[i];
+			m_inputTensors[i].shape = m_netinfo->stages[0].input_shapes[i];
+			m_inputTensors[i].st_mode = BM_STORE_1N;
+			m_inputTensors[i].device_mem = bm_mem_null();
+		}
 
-        for(int i = 0; i < m_netinfo->output_num; ++i) {
-            m_outputTensors[i].dtype = m_netinfo->output_dtypes[i];
-            m_outputTensors[i].shape = m_netinfo->stages[0].output_shapes[i];
-            m_outputTensors[i].st_mode = BM_STORE_1N;
-            m_outputTensors[i].device_mem = bm_mem_null();
-        }
+		for(int i = 0; i < m_netinfo->output_num; ++i) {
+			m_outputTensors[i].dtype = m_netinfo->output_dtypes[i];
+			m_outputTensors[i].shape = m_netinfo->stages[0].output_shapes[i];
+			m_outputTensors[i].st_mode = BM_STORE_1N;
+			m_outputTensors[i].device_mem = bm_mem_null();
+		}
 
-        assert(m_netinfo->stage_num == 1);
-    }
+		assert(m_netinfo->stage_num == 1);
+    showInfo();
+	}
 
-    ~BMNNNetwork() {
-        //Free input tensors
-        delete [] m_inputTensors;
-        //Free output tensors
-        for(int i = 0; i < m_netinfo->output_num; ++i) {
-            if (m_outputTensors[i].device_mem.size != 0) {
-                bm_free_device(m_handle, m_outputTensors[i].device_mem);
-            }
-        }
-        delete []m_outputTensors;
-    }
+	~BMNNNetwork() {
+		//Free input tensors
+		delete [] m_inputTensors;
+		//Free output tensors
+		for(int i = 0; i < m_netinfo->output_num; ++i) {
+			if (m_outputTensors[i].device_mem.size != 0) {
+				bm_free_device(m_handle, m_outputTensors[i].device_mem);
+			}
+		}
+		delete []m_outputTensors;
+	}
 
-    int inputTensorNum() {
-        return m_netinfo->input_num;
-    }
+	int inputTensorNum() {
+		return m_netinfo->input_num;
+	}
 
-    std::shared_ptr<BMNNTensor> inputTensor(int index){
-        assert(index < m_netinfo->input_num);
-        return std::make_shared<BMNNTensor>(m_handle, m_netinfo->input_names[index],
-                m_netinfo->input_scales[index], &m_inputTensors[index]);
-    }
+	std::shared_ptr<BMNNTensor> inputTensor(int index){
+		assert(index < m_netinfo->input_num);
+		return std::make_shared<BMNNTensor>(m_handle, m_netinfo->input_names[index],
+				m_netinfo->input_scales[index], &m_inputTensors[index]);
+	}
 
-    int outputTensorNum() {
-        return m_netinfo->output_num;
-    }
+	int outputTensorNum() {
+		return m_netinfo->output_num;
+	}
 
-    std::shared_ptr<BMNNTensor> outputTensor(int index){
-        assert(index < m_netinfo->output_num);
-        return std::make_shared<BMNNTensor>(m_handle, m_netinfo->output_names[index],
-                m_netinfo->output_scales[index], &m_outputTensors[index]);
-    }
+	std::shared_ptr<BMNNTensor> outputTensor(int index){
+		assert(index < m_netinfo->output_num);
+		return std::make_shared<BMNNTensor>(m_handle, m_netinfo->output_names[index],
+				m_netinfo->output_scales[index], &m_outputTensors[index]);
+	}
 
-    int forward() {
+	int forward() {
 
-        bool user_mem = false; // if false, bmrt will alloc mem every time.
-        if (m_outputTensors->device_mem.size != 0) {
-            // if true, bmrt don't alloc mem again.
-            user_mem = true;
-        }
+		bool user_mem = false; // if false, bmrt will alloc mem every time.
+		if (m_outputTensors->device_mem.size != 0) {
+			// if true, bmrt don't alloc mem again.
+			user_mem = true;
+		}
 
-        bool ok=bmrt_launch_tensor_ex(m_bmrt, m_netinfo->name, m_inputTensors, m_netinfo->input_num,
-                m_outputTensors, m_netinfo->output_num, user_mem, false);
-        if (!ok) {
-            std::cout << "bm_launch_tensor() failed=" << std::endl;
-            return -1;
-        }
+		bool ok=bmrt_launch_tensor_ex(m_bmrt, m_netinfo->name, m_inputTensors, m_netinfo->input_num,
+				m_outputTensors, m_netinfo->output_num, user_mem, false);
+		if (!ok) {
+			std::cout << "bm_launch_tensor() failed=" << std::endl;
+			return -1;
+		}
 
 #if 0
-        for(int i = 0;i < m_netinfo->output_num; ++i) {
-            auto tensor = m_outputTensors[i];
-            // dump
-            std::cout << "output_tensor [" << i << "] size=" << bmrt_tensor_device_size(&tensor) << std::endl;
-        }
+		for(int i = 0;i < m_netinfo->output_num; ++i) {
+			auto tensor = m_outputTensors[i];
+			// dump
+			std::cout << "output_tensor [" << i << "] size=" << bmrt_tensor_device_size(&tensor) << std::endl;
+		}
 #endif
 
-        return 0;
-    }
+		return 0;
+	}
 
+	static std::string shape_to_str(const bm_shape_t& shape) {
+		std::string str ="[ ";
+		for(int i=0; i<shape.num_dims; i++){
+			str += std::to_string(shape.dims[i]) + " ";
+		}
+		str += "]";
+		return str;
+	}
 
+	void showInfo()
+	{
+		const char* dtypeMap[] = {
+			"FLOAT32",
+			"FLOAT16",
+			"INT8",
+			"UINT8",
+			"INT16",
+			"UINT16",
+			"INT32",
+			"UINT32",
+		};
+		printf("\n########################\n");
+		printf("NetName: %s\n", m_netinfo->name);
+		for(int i=0; i<m_netinfo->input_num; i++){
+			auto shapeStr = shape_to_str(m_netinfo->stages[0].input_shapes[i]);
+			printf("  Input %d) '%s' shape=%s dtype=%s scale=%g\n",
+					i,
+					m_netinfo->input_names[i],
+					shapeStr.c_str(),
+					dtypeMap[m_netinfo->input_dtypes[i]],
+					m_netinfo->input_scales[i]);
+		}
+		for(int i=0; i<m_netinfo->output_num; i++){
+			auto shapeStr = shape_to_str(m_netinfo->stages[0].output_shapes[i]);
+			printf("  Output %d) '%s' shape=%s dtype=%s scale=%g\n",
+					i,
+					m_netinfo->output_names[i],
+					shapeStr.c_str(),
+					dtypeMap[m_netinfo->output_dtypes[i]],
+					m_netinfo->output_scales[i]);
+		}
+		printf("########################\n\n");
+
+	}
 
 };
 

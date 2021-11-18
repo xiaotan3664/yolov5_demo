@@ -46,6 +46,7 @@ int main(int argc, char *argv[])
         std::vector<YoloV5BoxVec> boxes;
         CV_Assert(0 == yolo.Detect(images, &boxes));
 
+        std::cout<<std::endl;
         for (int i = 0; i < (int) images.size(); ++i) {
 
             cv::Mat frame = images[i];

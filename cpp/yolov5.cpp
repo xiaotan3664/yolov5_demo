@@ -1,6 +1,7 @@
 
 #include "yolov5.hpp"
 #include <fstream>
+#include <vector>
 /**
 YOLOV5 input && output
 # input: x.1, [1, 3, 640, 640], float32, scale: 1
@@ -41,10 +42,6 @@ int YoloV5::Init(const std::string& coco_name_file)
     auto tensor = m_bmNetwork->inputTensor(0);
     m_net_h = tensor->get_shape()->dims[2];
     m_net_w = tensor->get_shape()->dims[3];
-
-    assert(m_bmNetwork->outputTensorNum()==1);
-    auto out_tensor = m_bmNetwork->outputTensor(0);
-    m_class_num = out_tensor->get_shape()->dims[2] - 5;
 
     // some API only accept bm_image whose stride is aligned to 64
     int aligned_net_w = FFALIGN(m_net_w, 64);
@@ -88,7 +85,7 @@ float YoloV5::get_aspect_scaled_ratio(int src_w, int src_h, int dst_w, int dst_h
     return ratio;
 }
 
-int YoloV5::pre_precess(const std::vector<cv::Mat>& images)
+int YoloV5::pre_process(const std::vector<cv::Mat>& images)
 {
     int image_n = images.size();
 
@@ -203,7 +200,7 @@ int YoloV5::Detect(const std::vector<cv::Mat>& images, std::vector<YoloV5BoxVec>
 
     //3. preprocess
     LOG_TS(m_ts, "YoloV5 preprocess");
-    ret = pre_precess(images);
+    ret = pre_process(images);
     CV_Assert(ret == 0);
     LOG_TS(m_ts, "YoloV5 preprocess");
 
@@ -237,63 +234,155 @@ int YoloV5::argmax(float* data, int num) {
 }
 
 
+static float sigmoid(float x)
+{
+    return 1.0 / (1 + expf(-x));
+}
+
 int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5BoxVec> *detected_boxes)
 {
     YoloV5BoxVec yolobox_vec;
     std::vector<cv::Rect> bbox_vec;
     for(int batch_idx = 0; batch_idx < (int)images.size(); ++ batch_idx)
     {
-        auto& frame = images[batch_idx];
-        int frame_width = frame.cols;
-        int frame_height = frame.rows;
+			auto& frame = images[batch_idx];
+			int frame_width = frame.cols;
+			int frame_height = frame.rows;
 
 #if USE_ASPECT_RATIO
-        bool isAlignWidth = false;
-        get_aspect_scaled_ratio(frame.cols, frame.rows, m_net_w, m_net_h, &isAlignWidth);
+			bool isAlignWidth = false;
+			get_aspect_scaled_ratio(frame.cols, frame.rows, m_net_w, m_net_h, &isAlignWidth);
 
-        if (isAlignWidth) {
-            frame_height = frame_width*(float)m_net_h/m_net_w;
-        }else{
-            frame_width = frame_height*(float)m_net_w/m_net_h;
-        }
+			if (isAlignWidth) {
+				frame_height = frame_width*(float)m_net_h/m_net_w;
+			}else{
+				frame_width = frame_height*(float)m_net_w/m_net_h;
+			}
 #endif
 
-        int output_num = m_bmNetwork->outputTensorNum();
-        int nout = m_class_num + 5;
+			int output_num = m_bmNetwork->outputTensorNum();
 
+			assert(output_num>0);
+			int min_dim = m_bmNetwork->outputTensor(0)->get_shape()->num_dims;
+			int min_idx = 0;
+			int box_num = 0;
+			for(int i=0; i<output_num; i++){
+				auto output_shape = m_bmNetwork->outputTensor(i)->get_shape();
+        auto output_dims = output_shape->num_dims;
+				assert(output_dims == 3 || output_dims == 5);
+        if(output_dims == 5){
+				   box_num += output_shape->dims[1] * output_shape->dims[2] * output_shape->dims[3];
+				}
+       
+				if(min_dim>output_dims){
+					min_idx = i;
+					min_dim = output_dims;
+				}
+			}
+
+			auto out_tensor = m_bmNetwork->outputTensor(min_idx);
+			int nout = out_tensor->get_shape()->dims[min_dim-1];
+			m_class_num = nout - 5;
+
+			float* output_data = nullptr;
+      std::vector<float> decoded_data;
+
+			if(min_dim ==3 && output_num !=1){
+				std::cout<<"--> WARNING: the current bmodel has redundant outputs"<<std::endl;
+				std::cout<<"             you can remove the redundant outputs to improve performance"<< std::endl;
+				std::cout<<std::endl;
+			}
+
+			if(min_dim == 5){
+				LOG_TS(m_ts, "1: get and decode");
+				std::cout<<"--> Note: Decoding Boxes"<<std::endl;
+				std::cout<<"          you can put the process into model during trace"<<std::endl;
+				std::cout<<"          which can reduce post process time, but forward time increases 1ms"<<std::endl;
+				std::cout<<std::endl;
+				const std::vector<std::vector<std::vector<int>>> anchors{
+					{{10, 13}, {16, 30}, {33, 23}},
+					{{30, 61}, {62, 45}, {59, 119}},
+					{{116, 90}, {156, 198}, {373, 326}}};
+        const int anchor_num = anchors[0].size();
+				assert(output_num == (int)anchors.size());
+        assert(box_num>0);
+        if((int)decoded_data.size() != box_num*nout){
+           decoded_data.resize(box_num*nout);
+        }
+				float *dst = decoded_data.data();
         for(int tidx = 0; tidx < output_num; ++tidx) {
             auto output_tensor = m_bmNetwork->outputTensor(tidx);
-            int box_num = output_tensor->get_shape()->dims[1];
-            float *output_data = (float*)output_tensor->get_cpu_data() + batch_idx*box_num*nout;
-            for (int i = 0; i < box_num; i++) {
-                float* ptr = output_data+i*nout;
-                float score = ptr[4];
-                if (score > m_objThreshold)
-                {
-                    int class_id = argmax(&ptr[5], m_class_num);
-                    float confidence = ptr[class_id + 5];
-                    if (confidence >= m_confThreshold)
-                    {
-                        float centerX = (ptr[0]+1)/m_net_w*frame_width-1;
-                        float centerY = (ptr[1]+1)/m_net_h*frame_height-1;
-                        float width = (ptr[2]+0.5) * frame_width / m_net_w;
-                        float height = (ptr[3]+0.5) * frame_height / m_net_h;
-
-                        YoloV5Box box;
-                        box.x = int(centerX - width / 2);
-                        box.y = int(centerY - height / 2);
-                        box.width = width;
-                        box.height = height;
-                        box.class_id = class_id;
-                        box.score = confidence * score;
-                        yolobox_vec.push_back(box);
-                    }
+            int feat_c = output_tensor->get_shape()->dims[1];
+            int feat_h = output_tensor->get_shape()->dims[2];
+            int feat_w = output_tensor->get_shape()->dims[3];
+            int area = feat_h * feat_w;
+						assert(feat_c == anchor_num);
+						int feature_size = feat_h*feat_w*nout;
+            float *tensor_data = (float*)output_tensor->get_cpu_data() + batch_idx*feat_c*area*nout;
+            for (int anchor_idx = 0; anchor_idx < anchor_num; anchor_idx++)
+            {
+                float *ptr = tensor_data + anchor_idx*feature_size;
+                for (int i = 0; i < area; i++) {
+									dst[0] = (sigmoid(ptr[0]) * 2 - 0.5 + i % feat_w);
+									dst[1] = (sigmoid(ptr[1]) * 2 - 0.5 + i / feat_h);
+									dst[2] = pow((sigmoid(ptr[2]) * 2), 2) * anchors[tidx][anchor_idx][0];
+									dst[3] = pow((sigmoid(ptr[3]) * 2), 2) * anchors[tidx][anchor_idx][1];
+									dst[4] = sigmoid(ptr[4]);
+									float score = dst[4];
+									if (score > m_objThreshold) {
+										for(int d=5; d<nout; d++){
+                       dst[d] = sigmoid(ptr[d]);
+										}
+									}
+                  dst += nout;
+                  ptr += nout;
                 }
             }
-        } // end of tidx
+				}
+        output_data = decoded_data.data();
+				LOG_TS(m_ts, "1: get and decode");
+			} else {
+				LOG_TS(m_ts, "1: get output");
+        assert(box_num == 0 || box_num == out_tensor->get_shape()->dims[1]);
+				box_num = out_tensor->get_shape()->dims[1];
+				output_data = (float*)out_tensor->get_cpu_data() + batch_idx*box_num*nout;
+				LOG_TS(m_ts, "1: get output");
+			}
 
-        NMS(yolobox_vec, m_nmsThreshold);
-        detected_boxes->push_back(yolobox_vec);
+
+			LOG_TS(m_ts, "2: filter boxes");
+			for (int i = 0; i < box_num; i++) {
+				float* ptr = output_data+i*nout;
+				float score = ptr[4];
+				if (score > m_objThreshold)
+				{
+					int class_id = argmax(&ptr[5], m_class_num);
+					float confidence = ptr[class_id + 5];
+					if (confidence >= m_confThreshold)
+					{
+						float centerX = (ptr[0]+1)/m_net_w*frame_width-1;
+						float centerY = (ptr[1]+1)/m_net_h*frame_height-1;
+						float width = (ptr[2]+0.5) * frame_width / m_net_w;
+						float height = (ptr[3]+0.5) * frame_height / m_net_h;
+
+						YoloV5Box box;
+						box.x = int(centerX - width / 2);
+						box.y = int(centerY - height / 2);
+						box.width = width;
+						box.height = height;
+						box.class_id = class_id;
+						box.score = confidence * score;
+						yolobox_vec.push_back(box);
+					}
+				}
+			}
+			LOG_TS(m_ts, "2: filter boxes");
+
+			LOG_TS(m_ts, "3: nms");
+			NMS(yolobox_vec, m_nmsThreshold);
+			LOG_TS(m_ts, "3: nms");
+
+			detected_boxes->push_back(yolobox_vec);
     }
 
     return 0;
