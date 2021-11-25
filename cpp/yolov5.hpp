@@ -7,50 +7,49 @@
 #include "bmnn_utils.h"
 #include "utils.hpp"
 
-#define MAX_BATCH 4
-
 struct YoloV5Box {
-    int x, y, width, height;
-    float score;
-    int class_id;
+  int x, y, width, height;
+  float score;
+  int class_id;
 };
 
 using YoloV5BoxVec = std::vector<YoloV5Box>;
 
 class YoloV5 {
-    std::shared_ptr<BMNNContext> m_bmContext;
-    std::shared_ptr<BMNNNetwork> m_bmNetwork;
-    bm_image m_resized_imgs[MAX_BATCH];
-    bm_image m_converto_imgs[MAX_BATCH];
+  std::shared_ptr<BMNNContext> m_bmContext;
+  std::shared_ptr<BMNNNetwork> m_bmNetwork;
+  std::vector<bm_image> m_resized_imgs;
+  std::vector<bm_image> m_converto_imgs;
 
-    //configuration
-    float m_confThreshold= 0.5;
-    float m_nmsThreshold = 0.5;
-    float m_objThreshold = 0.5;
-
-
-    std::vector<std::string> m_class_names;
-    int m_class_num = 80; // default is coco names
-    int m_net_h, m_net_w;
-
-    TimeStamp *m_ts;
+  //configuration
+  float m_confThreshold= 0.5;
+  float m_nmsThreshold = 0.5;
+  float m_objThreshold = 0.5;
 
 
-private:
-    int pre_process(const std::vector<cv::Mat>& images);
-    int post_process(const std::vector<cv::Mat>& images, std::vector<YoloV5BoxVec> *boxes);
-    int argmax(float* data, int dsize);
-    static float get_aspect_scaled_ratio(int src_w, int src_h, int dst_w, int dst_h, bool *alignWidth);
-    void NMS(YoloV5BoxVec &dets, float nmsConfidence);
+  std::vector<std::string> m_class_names;
+  int m_class_num = 80; // default is coco names
+  int m_net_h, m_net_w;
+  int max_batch;
 
-public:
-    YoloV5(std::shared_ptr<BMNNContext> context);
-    virtual ~YoloV5();
+  TimeStamp *m_ts;
 
-    int Init(const std::string& coco_names_file="");
-    int Detect(const std::vector<cv::Mat>& images, std::vector<YoloV5BoxVec> *boxes);
-    void drawPred(int classId, float conf, int left, int top, int right, int bottom, cv::Mat& frame);
-    void enableProfile(TimeStamp *ts);
+
+  private:
+  int pre_process(const std::vector<cv::Mat>& images);
+  int post_process(const std::vector<cv::Mat>& images, std::vector<YoloV5BoxVec>& boxes);
+  int argmax(float* data, int dsize);
+  static float get_aspect_scaled_ratio(int src_w, int src_h, int dst_w, int dst_h, bool *alignWidth);
+  void NMS(YoloV5BoxVec &dets, float nmsConfidence);
+
+  public:
+  YoloV5(std::shared_ptr<BMNNContext> context);
+  virtual ~YoloV5();
+
+  int Init(float confThresh=0.5, float objThresh=0.5, float nmsThresh=0.5, const std::string& coco_names_file="");
+  int Detect(const std::vector<cv::Mat>& images, std::vector<YoloV5BoxVec>& boxes);
+  void drawPred(int classId, float conf, int left, int top, int right, int bottom, cv::Mat& frame);
+  void enableProfile(TimeStamp *ts);
 };
 
 
