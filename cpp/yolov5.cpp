@@ -8,7 +8,7 @@
 */
 
 #define USE_ASPECT_RATIO 1
-//#define DUMP_FILE 1
+#define DUMP_FILE 1
 
 YoloV5::YoloV5(std::shared_ptr<BMNNContext> context):m_bmContext(context) {
   std::cout << "YoloV5 ctor .." << std::endl;
@@ -208,7 +208,9 @@ int YoloV5::Detect(const std::vector<cv::Mat>& input_images, std::vector<YoloV5B
     for(int i=0; i<max_batch; i++){
       images[i] = input_images[(detected_batch+i)%total_batch];
     }
-    detected_batch += max_batch;
+    int input_batch = total_batch-detected_batch;
+    if(input_batch>max_batch) input_batch = max_batch;
+    detected_batch += input_batch;
 
     //3. preprocess
     LOG_TS(m_ts, "YoloV5 preprocess");
@@ -225,7 +227,8 @@ int YoloV5::Detect(const std::vector<cv::Mat>& input_images, std::vector<YoloV5B
 
     //5. post process
     LOG_TS(m_ts, "YoloV5 postprocess");
-    ret = post_process(images, boxes);
+
+    ret = post_process(images, boxes, input_batch);
     CV_Assert(ret == 0);
     LOG_TS(m_ts, "YoloV5 postprocess");
   }
@@ -253,11 +256,18 @@ static float sigmoid(float x)
   return 1.0 / (1 + expf(-x));
 }
 
-int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5BoxVec>& detected_boxes)
+int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5BoxVec>& detected_boxes, int input_batch)
 {
   YoloV5BoxVec yolobox_vec;
   std::vector<cv::Rect> bbox_vec;
-  for(int batch_idx = 0; batch_idx < (int)images.size(); ++ batch_idx)
+	int output_num = m_bmNetwork->outputTensorNum();
+  std::vector<std::shared_ptr<BMNNTensor>> outputTensors(output_num);
+  for(int i=0; i<output_num; i++){
+      outputTensors[i] = m_bmNetwork->outputTensor(i);
+  }
+  
+
+  for(int batch_idx = 0; batch_idx < input_batch; ++ batch_idx)
   {
     auto& frame = images[batch_idx];
     int frame_width = frame.cols;
@@ -273,8 +283,6 @@ int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5B
       frame_width = frame_height*(float)m_net_w/m_net_h;
     }
 #endif
-
-    int output_num = m_bmNetwork->outputTensorNum();
 
     assert(output_num>0);
     int min_dim = m_bmNetwork->outputTensor(0)->get_shape()->num_dims;
@@ -294,7 +302,7 @@ int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5B
       }
     }
 
-    auto out_tensor = m_bmNetwork->outputTensor(min_idx);
+    auto out_tensor = outputTensors[min_idx];
     int nout = out_tensor->get_shape()->dims[min_dim-1];
     m_class_num = nout - 5;
 
@@ -325,7 +333,7 @@ int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5B
       }
       float *dst = decoded_data.data();
       for(int tidx = 0; tidx < output_num; ++tidx) {
-        auto output_tensor = m_bmNetwork->outputTensor(tidx);
+        auto output_tensor = outputTensors[tidx];
         int feat_c = output_tensor->get_shape()->dims[1];
         int feat_h = output_tensor->get_shape()->dims[2];
         int feat_w = output_tensor->get_shape()->dims[3];
