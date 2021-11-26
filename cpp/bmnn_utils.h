@@ -287,7 +287,7 @@ class BMNNNetwork : public NoCopyable {
     for(int s=0; s<m_netinfo->stage_num; s++){
       printf("---- stage %d ----\n", s);
       for(int i=0; i<m_netinfo->input_num; i++){
-        auto shapeStr = shape_to_str(m_netinfo->stages[0].input_shapes[i]);
+        auto shapeStr = shape_to_str(m_netinfo->stages[i].input_shapes[i]);
         printf("  Input %d) '%s' shape=%s dtype=%s scale=%g\n",
             i,
             m_netinfo->input_names[i],
@@ -296,7 +296,7 @@ class BMNNNetwork : public NoCopyable {
             m_netinfo->input_scales[i]);
       }
       for(int i=0; i<m_netinfo->output_num; i++){
-        auto shapeStr = shape_to_str(m_netinfo->stages[0].output_shapes[i]);
+        auto shapeStr = shape_to_str(m_netinfo->stages[i].output_shapes[i]);
         printf("  Output %d) '%s' shape=%s dtype=%s scale=%g\n",
             i,
             m_netinfo->output_names[i],

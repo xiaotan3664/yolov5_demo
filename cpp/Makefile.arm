@@ -12,7 +12,7 @@ INC_DIR += -I$(top_dir)/NeuralNetwork/include
 INC_DIR += -I$(sdk_dir)/include/opencv/opencv4
 INC_DIR += -I$(sdk_dir)/include/ffmpeg -I$(sdk_dir)/include
 
-CXXFLAGS := -g -O2 -Wall -std=c++11 $(INC_DIR)
+CXXFLAGS := -g -O0 -Wall -std=c++11 $(INC_DIR)
 LOCAL_MEM_ADDRWIDTH           ?= 19
 CXXFLAGS += -DCONFIG_LOCAL_MEM_ADDRWIDTH=$(LOCAL_MEM_ADDRWIDTH)
 
