@@ -91,9 +91,8 @@ float YoloV5::get_aspect_scaled_ratio(int src_w, int src_h, int dst_w, int dst_h
   return ratio;
 }
 
-int YoloV5::pre_process(const std::vector<cv::Mat>& images)
+int YoloV5::pre_process(const std::vector<cv::Mat>& images, int image_n)
 {
-  int image_n = images.size();
 
   // Check input parameters
   if( image_n > max_batch) {
@@ -205,16 +204,16 @@ int YoloV5::Detect(const std::vector<cv::Mat>& input_images, std::vector<YoloV5B
 
   std::vector<cv::Mat> images(max_batch);
   while(detected_batch<total_batch){
-    for(int i=0; i<max_batch; i++){
-      images[i] = input_images[(detected_batch+i)%total_batch];
-    }
     int input_batch = total_batch-detected_batch;
     if(input_batch>max_batch) input_batch = max_batch;
+    for(int i=0; i<input_batch; i++){
+      images[i] = input_images[detected_batch+i];
+    }
     detected_batch += input_batch;
 
     //3. preprocess
     LOG_TS(m_ts, "YoloV5 preprocess");
-    ret = pre_process(images);
+    ret = pre_process(images, input_batch);
     CV_Assert(ret == 0);
     LOG_TS(m_ts, "YoloV5 preprocess");
 
@@ -232,7 +231,6 @@ int YoloV5::Detect(const std::vector<cv::Mat>& input_images, std::vector<YoloV5B
     CV_Assert(ret == 0);
     LOG_TS(m_ts, "YoloV5 postprocess");
   }
-  boxes.resize(total_batch);
   return ret;
 }
 

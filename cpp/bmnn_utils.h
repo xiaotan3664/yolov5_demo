@@ -160,6 +160,7 @@ class BMNNNetwork : public NoCopyable {
   bm_handle_t  m_handle;
   void *m_bmrt;
   bool is_soc;
+  std::vector<int> m_batches;
   int m_max_batch;
 
   std::unordered_map<std::string, bm_tensor_t*> m_mapInputs;
@@ -171,8 +172,9 @@ class BMNNNetwork : public NoCopyable {
     m_netinfo = bmrt_get_network_info(bmrt, name.c_str());
     m_max_batch = -1;
     for(int i=0; i<m_netinfo->stage_num; i++){
-      if(m_max_batch<(int)m_netinfo->stages[i].input_shapes[0].dims[0]){
-        m_max_batch = m_netinfo->stages[i].input_shapes[0].dims[0];
+      m_batches.push_back(m_netinfo->stages[i].input_shapes[0].dims[0]);
+      if(m_max_batch<m_batches.back()){
+        m_max_batch = m_batches.back();
       }
     }
     m_inputTensors = new bm_tensor_t[m_netinfo->input_num];
@@ -213,11 +215,8 @@ class BMNNNetwork : public NoCopyable {
     delete []m_outputTensors;
   }
 
-  int maxBatch() {
+  int maxBatch() const {
     return m_max_batch;
-  }
-  int inputTensorNum() {
-    return m_netinfo->input_num;
   }
 
   std::shared_ptr<BMNNTensor> inputTensor(int index){

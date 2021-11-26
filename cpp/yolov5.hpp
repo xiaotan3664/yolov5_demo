@@ -36,7 +36,7 @@ class YoloV5 {
 
 
   private:
-  int pre_process(const std::vector<cv::Mat>& images);
+  int pre_process(const std::vector<cv::Mat>& images, int real_batch);
   int post_process(const std::vector<cv::Mat>& images, std::vector<YoloV5BoxVec>& boxes, int real_batch);
   int argmax(float* data, int dsize);
   static float get_aspect_scaled_ratio(int src_w, int src_h, int dst_w, int dst_h, bool *alignWidth);
