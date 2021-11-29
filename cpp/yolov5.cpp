@@ -189,6 +189,7 @@ int YoloV5::pre_process(const std::vector<cv::Mat>& images, int image_n)
   CV_Assert(ret == 0);
 
   //3. attach to tensor
+  if(image_n != max_batch) image_n = m_bmNetwork->get_nearest_batch(image_n); 
   bm_device_mem_t input_dev_mem;
   bm_image_get_contiguous_device_mem(image_n, m_converto_imgs.data(), &input_dev_mem);
   input_tensor->set_device_mem(&input_dev_mem);

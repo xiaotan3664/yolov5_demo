@@ -75,24 +75,21 @@ class BMNNTensor{
         assert(BM_SUCCESS == ret);
         pFP32 = (float*)addr;
       } else if (BM_INT8 == m_tensor->dtype) {
-        int8_t * pU8 = nullptr;
-        int tensor_size = bmrt_tensor_bytesize(m_tensor);
+        int8_t * pI8 = nullptr;
         unsigned long long  addr;
         ret = bm_mem_mmap_device_mem(m_handle, &m_tensor->device_mem, &addr);
         assert(BM_SUCCESS == ret);
         ret = bm_mem_invalidate_device_mem(m_handle, &m_tensor->device_mem);
         assert(BM_SUCCESS == ret);
-        pU8 = (int8_t*)addr;
+        pI8 = (int8_t*)addr;
 
         // dtype convert
         pFP32 = new float[count];
         assert(pFP32 != nullptr);
-        ret = bm_memcpy_d2s_partial(m_handle, pU8, m_tensor->device_mem, tensor_size);
-        assert(BM_SUCCESS ==ret);
         for(int i = 0;i < count; ++ i) {
-          pFP32[i] = pU8[i] * m_scale;
+          pFP32[i] = pI8[i] * m_scale;
         }
-        ret = bm_mem_unmap_device_mem(m_handle, pU8, bm_mem_get_device_size(m_tensor->device_mem));
+        ret = bm_mem_unmap_device_mem(m_handle, pI8, bm_mem_get_device_size(m_tensor->device_mem));
         assert(BM_SUCCESS == ret);
       } else{
         std::cout << "NOT support dtype=" << m_tensor->dtype << std::endl;
@@ -105,20 +102,20 @@ class BMNNTensor{
         ret = bm_memcpy_d2s_partial(m_handle, pFP32, m_tensor->device_mem, count * sizeof(float));
         assert(BM_SUCCESS ==ret);
       } else if (BM_INT8 == m_tensor->dtype) {
-        int8_t * pU8 = nullptr;
+        int8_t * pI8 = nullptr;
         int tensor_size = bmrt_tensor_bytesize(m_tensor);
-        pU8 = new int8_t[tensor_size];
-        assert(pU8 != nullptr);
+        pI8 = new int8_t[tensor_size];
+        assert(pI8 != nullptr);
 
         // dtype convert
         pFP32 = new float[count];
         assert(pFP32 != nullptr);
-        ret = bm_memcpy_d2s_partial(m_handle, pU8, m_tensor->device_mem, tensor_size);
+        ret = bm_memcpy_d2s_partial(m_handle, pI8, m_tensor->device_mem, tensor_size);
         assert(BM_SUCCESS ==ret);
         for(int i = 0;i < count; ++ i) {
-          pFP32[i] = pU8[i] * m_scale;
+          pFP32[i] = pI8[i] * m_scale;
         }
-        delete [] pU8;
+        delete [] pI8;
       } else{
         std::cout << "NOT support dtype=" << m_tensor->dtype << std::endl;
       }
@@ -160,7 +157,7 @@ class BMNNNetwork : public NoCopyable {
   bm_handle_t  m_handle;
   void *m_bmrt;
   bool is_soc;
-  std::vector<int> m_batches;
+  std::set<int> m_batches;
   int m_max_batch;
 
   std::unordered_map<std::string, bm_tensor_t*> m_mapInputs;
@@ -171,12 +168,14 @@ class BMNNNetwork : public NoCopyable {
     m_handle = static_cast<bm_handle_t>(bmrt_get_bm_handle(bmrt));
     m_netinfo = bmrt_get_network_info(bmrt, name.c_str());
     m_max_batch = -1;
+    std::vector<int> batches;
     for(int i=0; i<m_netinfo->stage_num; i++){
-      m_batches.push_back(m_netinfo->stages[i].input_shapes[0].dims[0]);
-      if(m_max_batch<m_batches.back()){
-        m_max_batch = m_batches.back();
+      batches.push_back(m_netinfo->stages[i].input_shapes[0].dims[0]);
+      if(m_max_batch<batches.back()){
+        m_max_batch = batches.back();
       }
     }
+    m_batches.insert(batches.begin(), batches.end());
     m_inputTensors = new bm_tensor_t[m_netinfo->input_num];
     m_outputTensors = new bm_tensor_t[m_netinfo->output_num];
     for(int i = 0; i < m_netinfo->input_num; ++i) {
@@ -217,6 +216,15 @@ class BMNNNetwork : public NoCopyable {
 
   int maxBatch() const {
     return m_max_batch;
+  }
+  int get_nearest_batch(int real_batch){
+      for(auto batch: m_batches){
+          if(batch>=real_batch){
+             return batch;
+					}
+      }
+      assert(0);
+      return m_max_batch;
   }
 
   std::shared_ptr<BMNNTensor> inputTensor(int index){
