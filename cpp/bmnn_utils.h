@@ -182,6 +182,7 @@ class BMNNNetwork : public NoCopyable {
       m_inputTensors[i].dtype = m_netinfo->input_dtypes[i];
       m_inputTensors[i].shape = m_netinfo->stages[0].input_shapes[i];
       m_inputTensors[i].st_mode = BM_STORE_1N;
+      // input device mem should be provided outside, such as from image's contiguous mem
       m_inputTensors[i].device_mem = bm_mem_null();
     }
 
@@ -189,7 +190,18 @@ class BMNNNetwork : public NoCopyable {
       m_outputTensors[i].dtype = m_netinfo->output_dtypes[i];
       m_outputTensors[i].shape = m_netinfo->stages[0].output_shapes[i];
       m_outputTensors[i].st_mode = BM_STORE_1N;
-      m_outputTensors[i].device_mem = bm_mem_null();
+      
+      // alloc as max size to reuse device mem, avoid to alloc and free everytime
+      size_t max_size=0;
+			for(int s=0; s<m_netinfo->stage_num; s++){
+         size_t out_size = bmrt_shape_count(&m_netinfo->stages[s].output_shapes[i]);
+         if(max_size<out_size){
+            max_size = out_size;
+         }
+      }
+      if(BM_FLOAT32 == m_netinfo->output_dtypes[i]) max_size *= 4;
+      auto ret =  bm_malloc_device_byte(m_handle, &m_outputTensors[i].device_mem, max_size);
+			assert(BM_SUCCESS == ret);
     }
     struct bm_misc_info misc_info;
     bm_status_t ret = bm_get_misc_info(m_handle, &misc_info);
@@ -411,14 +423,6 @@ class BMNNContext : public NoCopyable {
     return std::make_shared<BMNNNetwork>(m_bmrt, m_network_names[net_index]);
   }
 
-
-
 };
 
-
-
-
-
-
-
-#endif //YOLOV5_DEMO_BMNN_UTILS_H
+#endif
