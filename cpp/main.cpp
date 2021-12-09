@@ -33,6 +33,7 @@ int main(int argc, char *argv[])
     "{iou | 0.5 | iou threshold for nms}"
     "{help | 0 | Print help information.}"
     "{is_video | 0 | input video file path}"
+    "{frame_num | 0 | number of frames in video to process, 0 means processing all frames}"
     "{input |../data/images/bus.jpg | input stream file path}"
     "{classnames |../data/coco.names | class names' file path}";
 
@@ -108,6 +109,8 @@ int main(int argc, char *argv[])
     int h = int(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
     std::cout << "resolution of input stream: " << h << "," << w << std::endl;
 
+    int frame_count=0;
+    int frame_num = parser.get<int>("frame_num");
     while(1) {
       cv::Mat img;
       if (!cap.read(img)) {
@@ -125,18 +128,22 @@ int main(int argc, char *argv[])
       for (int i = 0; i < (int) images.size(); ++i) {
 
         cv::Mat frame = images[i];
-        for (auto bbox : boxes[i]) {
-          //std::cout << "class id =" << bbox.class_id << ",score = " << bbox.score
-          //          << " (x=" << bbox.x << ",y=" << bbox.y << ",w=" << bbox.width << ",y=" << bbox.height << ")"
-          //         << std::endl;
-          yolo.drawPred(bbox.class_id, bbox.score, bbox.x, bbox.y, bbox.x + bbox.width,
-              bbox.y + bbox.height, frame);
+        std::cout << "frame #"<<frame_count<<": detect boxes: " << boxes[i].size() << std::endl;
+        if(frame_num<10 || frame_count%32 == 0) {
+          for (auto bbox : boxes[i]) {
+            //std::cout << "class id =" << bbox.class_id << ",score = " << bbox.score
+            //          << " (x=" << bbox.x << ",y=" << bbox.y << ",w=" << bbox.width << ",y=" << bbox.height << ")"
+            //          << std::endl;
+            yolo.drawPred(bbox.class_id, bbox.score, bbox.x, bbox.y, bbox.x + bbox.width,
+                bbox.y + bbox.height, frame);
+          }
+            std::string output_file = cv::format("output_%d.jpg", frame_count);
+            cv::imwrite(output_file, frame);
         }
-        std::cout << "detect boxes: " << boxes[i].size() << std::endl;
+        frame_count ++;
       }
-
+			if(frame_num>0 && frame_count>frame_num) break;
     }
-
 
   }
 
