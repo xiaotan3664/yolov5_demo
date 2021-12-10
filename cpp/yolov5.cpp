@@ -235,7 +235,7 @@ int YoloV5::Detect(const std::vector<cv::Mat>& input_images, std::vector<YoloV5B
   return ret;
 }
 
-int YoloV5::argmax(float* data, int num) {
+int YoloV5::argmax(const float* data, int num) {
   float max_value = 0.0;
   int max_index = 0;
   for(int i = 0; i < num; ++i) {
@@ -261,10 +261,13 @@ int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5B
   std::vector<cv::Rect> bbox_vec;
 	int output_num = m_bmNetwork->outputTensorNum();
   std::vector<std::shared_ptr<BMNNTensor>> outputTensors(output_num);
+  std::vector<const float*> outputData(output_num);
+  LOG_TS(m_ts, "post 1: get output");
   for(int i=0; i<output_num; i++){
       outputTensors[i] = m_bmNetwork->outputTensor(i);
+      outputData[i] = outputTensors[i]->get_cpu_data();
   }
-  
+  LOG_TS(m_ts, "post 1: get output");
 
   for(int batch_idx = 0; batch_idx < input_batch; ++ batch_idx)
   {
@@ -304,18 +307,23 @@ int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5B
     auto out_tensor = outputTensors[min_idx];
     int nout = out_tensor->get_shape()->dims[min_dim-1];
     m_class_num = nout - 5;
+    if(output_num == 2){
+       assert(outputTensors[0]->get_shape()->dims[min_dim-1] == 4);
+       nout = outputTensors[1]->get_shape()->dims[min_dim-1];
+       m_class_num = nout - 1;
+    }
 
-    float* output_data = nullptr;
+    const float* output_data = nullptr;
     std::vector<float> decoded_data;
 
-    if(min_dim ==3 && output_num !=1){
+    if(min_dim ==3 && output_num > 2){
       std::cout<<"--> WARNING: the current bmodel has redundant outputs"<<std::endl;
       std::cout<<"             you can remove the redundant outputs to improve performance"<< std::endl;
       std::cout<<std::endl;
     }
 
     if(min_dim == 5){
-      LOG_TS(m_ts, "1: get and decode");
+      LOG_TS(m_ts, "post 1.5: get and decode");
       std::cout<<"--> Note: Decoding Boxes"<<std::endl;
       std::cout<<"          you can put the process into model during trace"<<std::endl;
       std::cout<<"          which can reduce post process time, but forward time increases 1ms"<<std::endl;
@@ -339,10 +347,10 @@ int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5B
         int area = feat_h * feat_w;
         assert(feat_c == anchor_num);
         int feature_size = feat_h*feat_w*nout;
-        float *tensor_data = (float*)output_tensor->get_cpu_data() + batch_idx*feat_c*area*nout;
+        auto tensor_data = outputData[tidx] + batch_idx*feat_c*area*nout;
         for (int anchor_idx = 0; anchor_idx < anchor_num; anchor_idx++)
         {
-          float *ptr = tensor_data + anchor_idx*feature_size;
+          const float *ptr = tensor_data + anchor_idx*feature_size;
           for (int i = 0; i < area; i++) {
             dst[0] = (sigmoid(ptr[0]) * 2 - 0.5 + i % feat_w) / feat_w * m_net_w;
             dst[1] = (sigmoid(ptr[1]) * 2 - 0.5 + i / feat_h) / feat_h * m_net_h;
@@ -361,41 +369,69 @@ int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5B
         }
       }
       output_data = decoded_data.data();
-      LOG_TS(m_ts, "1: get and decode");
+      LOG_TS(m_ts, "post 1.5: get and decode");
     } else {
-      LOG_TS(m_ts, "post 1: get output");
       assert(box_num == 0 || box_num == out_tensor->get_shape()->dims[1]);
       box_num = out_tensor->get_shape()->dims[1];
-      output_data = (float*)out_tensor->get_cpu_data() + batch_idx*box_num*nout;
-      LOG_TS(m_ts, "post 1: get output");
+      output_data = outputData.back() + batch_idx*box_num*nout;
     }
 
 
     LOG_TS(m_ts, "post 2: filter boxes");
-    for (int i = 0; i < box_num; i++) {
-      float* ptr = output_data+i*nout;
-      float score = ptr[4];
-      if (score > m_objThreshold)
-      {
-        int class_id = argmax(&ptr[5], m_class_num);
-        float confidence = ptr[class_id + 5];
-        if (confidence >= m_confThreshold)
-        {
-          float centerX = (ptr[0]+1)/m_net_w*frame_width-1;
-          float centerY = (ptr[1]+1)/m_net_h*frame_height-1;
-          float width = (ptr[2]+0.5) * frame_width / m_net_w;
-          float height = (ptr[3]+0.5) * frame_height / m_net_h;
+    if(output_num != 2){
+			for (int i = 0; i < box_num; i++) {
+				const float* ptr = output_data+i*nout;
+				float score = ptr[4];
+				if (score > m_objThreshold)
+				{
+					int class_id = argmax(&ptr[5], m_class_num);
+					float confidence = ptr[class_id + 5];
+					if (confidence >= m_confThreshold)
+					{
+						float centerX = (ptr[0]+1)/m_net_w*frame_width-1;
+						float centerY = (ptr[1]+1)/m_net_h*frame_height-1;
+						float width = (ptr[2]+0.5) * frame_width / m_net_w;
+						float height = (ptr[3]+0.5) * frame_height / m_net_h;
 
-          YoloV5Box box;
-          box.x = int(centerX - width / 2);
-          box.y = int(centerY - height / 2);
-          box.width = width;
-          box.height = height;
-          box.class_id = class_id;
-          box.score = confidence * score;
-          yolobox_vec.push_back(box);
-        }
-      }
+						YoloV5Box box;
+						box.x = int(centerX - width / 2);
+						box.y = int(centerY - height / 2);
+						box.width = width;
+						box.height = height;
+						box.class_id = class_id;
+						box.score = confidence * score;
+						yolobox_vec.push_back(box);
+					}
+				}
+			}
+    } else {
+			for (int i = 0; i < box_num; i++) {
+				auto box_ptr = outputData[0] + i*4;
+				auto score_ptr = outputData[1] + i*nout;
+				float score = score_ptr[0];
+				if (score > m_objThreshold)
+				{
+					int class_id = argmax(&score_ptr[1], m_class_num);
+					float confidence = score_ptr[class_id + 1];
+					if (confidence >= m_confThreshold)
+					{
+						float leftX = (box_ptr[0]+1)/m_net_w*frame_width-1;
+						float topY = (box_ptr[1]+1)/m_net_h*frame_height-1;
+						float rightX = (box_ptr[2]+1)/m_net_w*frame_width-1;
+						float bottomY = (box_ptr[3]+1)/m_net_h*frame_height-1;
+						if(leftX<0 || topY<0 || rightX>frame_width || bottomY>frame_height) continue;
+
+						YoloV5Box box;
+						box.x = int(leftX);
+						box.y = int(topY);
+						box.width = rightX-leftX;
+						box.height = bottomY-topY;
+						box.class_id = class_id;
+						box.score = confidence * score;
+						yolobox_vec.push_back(box);
+					}
+				}
+			}
     }
     LOG_TS(m_ts, "post 2: filter boxes");
 
