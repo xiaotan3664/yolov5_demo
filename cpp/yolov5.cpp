@@ -344,8 +344,8 @@ int YoloV5::post_process(const std::vector<cv::Mat> &images, std::vector<YoloV5B
         {
           float *ptr = tensor_data + anchor_idx*feature_size;
           for (int i = 0; i < area; i++) {
-            dst[0] = (sigmoid(ptr[0]) * 2 - 0.5 + i % feat_w);
-            dst[1] = (sigmoid(ptr[1]) * 2 - 0.5 + i / feat_h);
+            dst[0] = (sigmoid(ptr[0]) * 2 - 0.5 + i % feat_w) / feat_w * m_net_w;
+            dst[1] = (sigmoid(ptr[1]) * 2 - 0.5 + i / feat_h) / feat_h * m_net_h;
             dst[2] = pow((sigmoid(ptr[2]) * 2), 2) * anchors[tidx][anchor_idx][0];
             dst[3] = pow((sigmoid(ptr[3]) * 2), 2) * anchors[tidx][anchor_idx][1];
             dst[4] = sigmoid(ptr[4]);
