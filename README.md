@@ -22,12 +22,6 @@ generate fp32 bmodel for running on device, pytorch model must exist in data/mod
 $ script/gen_fp32_bmodel.sh [img_size] [batch_size] # by default, img_size=640 batch_size=1
 ```
 
-generate fix8b bmodel for running on device, pytorch model must exist in data/models
-
-``` shell
-$ script/gen_fix8b_bmodel.sh dataset_dir [iteration] [img_size] [batch_size] # by default, iteration=1 img_size=640 batch_size=1
-```
-
 
 ## 2.2 cpp demo usage:
 
